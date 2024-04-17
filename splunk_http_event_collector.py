@@ -35,9 +35,9 @@ class http_event_collector:
             token -- the Splunk HEC token value - required
             http_event_server -- the Splunk Server name or ip. Name must be network resolvable. - required
             input_type -- json or raw HEC type - provided at init (default json)
-            host -- value to use as host field for events sent to Splunk (default the local system's hostname) 
+            host -- value to use as host field for events sent to Splunk (default the local system's hostname)
             http_event_port -- Splunk HEC network port (default 8088)
-            http_event_server_ssl -- boolean to set if Splunk HEC is using SSL (default True) 
+            http_event_server_ssl -- boolean to set if Splunk HEC is using SSL (default True)
 
         Attributes:
             SSL_verify -- boolean flag to force SSL certificate verification (default false)
@@ -63,17 +63,26 @@ class http_event_collector:
     # Limit the size of the flushQueue, that buffers events for the sending threads.
     maxQueueSize = 100 * threadCount
 
+    session = None
+
     # An improved requests retry method from
     # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
     # 503 added for endpoint busy
     # 408 added in case using HAproxy
 
     def requests_retry_session(self, retries=3,backoff_factor=0.3,status_forcelist=(408,500,502,503,504),session=None):
+        """Sets up an internal requests.Session object and will reuse it for the lifetime of the class instance to improve performance"""
+
+        # reuse the internal session if possible
+        if session is None and self.session is not None:
+            return self.session
+
         session = session or requests.Session()
         retry = Retry(total=retries, read=retries, connect=retries, backoff_factor=backoff_factor, status_forcelist=status_forcelist, allowed_methods=frozenset(['HEAD', 'TRACE', 'GET', 'PUT', 'OPTIONS', 'DELETE', 'POST']))
         adapter = HTTPAdapter(max_retries=retry)
         session.mount('http://', adapter)
         session.mount('https://', adapter)
+        self.session = session
         return session
 
     def __init__(self,token,http_event_server,input_type='json',host="",http_event_port='8088',http_event_server_ssl=True):
@@ -91,22 +100,22 @@ class http_event_collector:
         self.batchEvents = []
         self.currentByteLength = 0
         self.input_type = input_type
-        self.popNullFields = False 
+        self.popNullFields = False
         self.flushQueue = Queue.Queue(maxsize=self.maxQueueSize)
         for x in range(self.threadCount):
             t = threading.Thread(target=self._batchThread)
             t.daemon = True
             t.start()
-        
-        if self.SSL_verify == False:
+
+        if not self.SSL_verify:
             requests.packages.urllib3.disable_warnings()
-    
+
         # Set host to specified value or default to localhostname if no value provided
         if host:
             self.host = host
         else:
             self.host = socket.gethostname()
-     
+
         self.log.info("HEC Instance Ready: server_uri=%s",self.server_uri)
 
     @property
@@ -142,7 +151,7 @@ class http_event_collector:
             https://docs.splunk.com/Documentation/Splunk/8.0.2/Data/TroubleshootHTTPEventCollector
 
         Notes:
-            method will return true even if HEC token is wrong because system is reachable. 
+            method will return true even if HEC token is wrong because system is reachable.
             method will log warning on reachable errors to show bad token
             method will warn on splunk hec server health codes
         """
@@ -150,7 +159,7 @@ class http_event_collector:
         self.log.info("Checking HEC Server URI reachability.")
         headers = {'Authorization':'Splunk '+self.token, 'X-Splunk-Request-Channel':str(uuid.uuid1())}
         payload = dict()
-        response = dict() 
+        response = dict()
         hec_reachable = False
         acceptable_status_codes = [400,401,403]
         heath_warning_status_codes = [500,503]
@@ -180,7 +189,7 @@ class http_event_collector:
     def sendEvent(self,payload,eventtime=""):
         """
         Method to immediately send an event to the http event collector
-        
+
         When the internal queue is exausted, this function _blocks_ until a slot is available.
         """
 
@@ -252,7 +261,7 @@ class http_event_collector:
 
     def _batchThread(self):
         """Internal Function: Threads to send batches of events."""
-        
+
         while True:
             self.log.debug("Events received on thread. Sending to Splunk.")
             payload = " ".join(self.flushQueue.get())
@@ -265,7 +274,7 @@ class http_event_collector:
                 self.log.exception(e)
 
             self.flushQueue.task_done()
-            
+
     def _waitUntilDone(self):
         """Internal Function: Block until all flushQueue is empty."""
         self.flushQueue.join()
@@ -298,9 +307,9 @@ def main():
     # Example with the JSON connection logging to debug
     testeventJSON = http_event_collector(http_event_collector_key_json, http_event_collector_host,'json')
     testeventJSON.log.setLevel(logging.DEBUG)
-  
+
     # Set option to pop empty fields to True, default is False to preserve previous class behavior. Only applies to JSON method
-    testeventJSON.popNullFields = True 
+    testeventJSON.popNullFields = True
 
     # Start event payload and add the metadata information
     payload = {}
