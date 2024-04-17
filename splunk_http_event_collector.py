@@ -132,13 +132,18 @@ class http_event_collector:
 
         if self.input_type == 'raw':
             input_url = '/raw?channel='+str(uuid.uuid1())
-            if self.sourcetype: input_url = input_url+'&sourcetype='+self.sourcetype
-            if self.index: input_url = input_url+'&index='+self.index
+            if self.sourcetype:
+                input_url = input_url+'&sourcetype='+self.sourcetype
+            if self.index:
+                input_url = input_url+'&index='+self.index
         else:
             input_url = '/event'
-            if self.sourcetype or self.index: input_url = input_url+'?'
-            if self.sourcetype: input_url = input_url+'sourcetype='+self.sourcetype+"&"
-            if self.index: input_url = input_url+'index='+self.index+"&"
+            if self.sourcetype or self.index:
+                input_url = input_url+'?'
+            if self.sourcetype:
+                input_url = input_url+'sourcetype='+self.sourcetype+"&"
+            if self.index:
+                input_url = input_url+'index='+self.index+"&"
 
         server_uri = '%s://%s:%s/services/collector%s' % (protocol, self.http_event_server, self.http_event_port, input_url)
         return (server_uri)
